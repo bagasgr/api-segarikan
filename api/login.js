@@ -1,9 +1,10 @@
+// pages/api/login.js
+import fs from 'fs';
+import path from 'path';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-// Simulasi database user yang sama seperti di register.js
-let users = [];
-
+const filePath = path.join(process.cwd(), 'users.json');
 const SECRET_KEY = 'rahasia_super_aman'; // Ganti dengan env variable di production
 
 export default async function handler(req, res) {
@@ -13,24 +14,23 @@ export default async function handler(req, res) {
 
   const { email, password } = req.body;
 
-  // Validasi input
   if (!email || !password) {
     return res.status(400).json({ message: 'Email dan password wajib diisi' });
   }
 
-  // Cari user berdasarkan email
+  const fileData = fs.readFileSync(filePath, 'utf8');
+  const users = JSON.parse(fileData);
+
   const user = users.find((u) => u.email === email);
   if (!user) {
     return res.status(401).json({ message: 'Email atau password salah' });
   }
 
-  // Cocokkan password
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
     return res.status(401).json({ message: 'Email atau password salah' });
   }
 
-  // Buat token
   const token = jwt.sign(
     {
       id: user.id,
@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       email: user.email,
     },
     SECRET_KEY,
-    { expiresIn: '60d' } // Token berlaku 7 hari
+    { expiresIn: '60d' }
   );
 
   return res.status(200).json({
