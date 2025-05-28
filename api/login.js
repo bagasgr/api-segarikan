@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       email: user.email,
     },
     SECRET_KEY,
-    { expiresIn: '7d' } // Token berlaku 7 hari
+    { expiresIn: '60d' } // Token berlaku 7 hari
   );
 
   return res.status(200).json({
