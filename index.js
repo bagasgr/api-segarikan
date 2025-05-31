@@ -1,83 +1,118 @@
-import express from 'express';
-import cors from 'cors';
-import fs from 'fs';
-import bcrypt from 'bcryptjs';
+// File: index.js
+const express = require('express');
+const multer = require('multer');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SECRET_KEY = 'segarikan-secret-key';
 
-// Middleware
-app.use(cors());             // Izinkan semua origin
-app.use(express.json());     // Parsing JSON
+app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static('uploads'));
 
-// Simulasi database user (di memori)
+// Setup multer for file upload
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/');
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+const upload = multer({ storage });
+
 let users = [];
+let stories = [];
 
-// Endpoint register user
-app.post('/api/register', async (req, res) => {
+// Middleware for authentication
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: true, message: 'Token required' });
+
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.status(403).json({ error: true, message: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+}
+
+// Register
+app.post('/v1/register', (req, res) => {
   const { name, email, password } = req.body;
-
-  // Validasi data
-  if (!name || !email || !password) {
-    return res.status(400).json({ message: 'Semua field harus diisi' });
+  if (users.find(u => u.email === email)) {
+    return res.status(400).json({ error: true, message: 'Email already exists' });
   }
+  const user = { id: Date.now().toString(), name, email, password };
+  users.push(user);
+  res.json({ error: false, message: 'User Created' });
+});
 
-  // Cek user sudah ada
-  const existingUser = users.find(user => user.email === email);
-  if (existingUser) {
-    return res.status(409).json({ message: 'Email sudah terdaftar' });
+// Login
+app.post('/v1/login', (req, res) => {
+  const { email, password } = req.body;
+  const user = users.find(u => u.email === email && u.password === password);
+  if (!user) return res.status(401).json({ error: true, message: 'Invalid credentials' });
+
+  const token = jwt.sign({ userId: user.id, name: user.name }, SECRET_KEY);
+  res.json({ error: false, message: 'success', loginResult: { userId: user.id, name: user.name, token } });
+});
+
+// Add new story (with auth)
+app.post('/v1/stories', authenticateToken, upload.single('photo'), (req, res) => {
+  const { description, lat, lon } = req.body;
+  const photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+
+  const story = {
+    id: 'story-' + Date.now(),
+    name: req.user.name,
+    description,
+    photoUrl,
+    createdAt: new Date(),
+    lat: parseFloat(lat) || null,
+    lon: parseFloat(lon) || null
+  };
+  stories.push(story);
+  res.json({ error: false, message: 'success' });
+});
+
+// Add new story (guest)
+app.post('/v1/stories/guest', upload.single('photo'), (req, res) => {
+  const { description, lat, lon } = req.body;
+  const photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+
+  const story = {
+    id: 'story-' + Date.now(),
+    name: 'Guest',
+    description,
+    photoUrl,
+    createdAt: new Date(),
+    lat: parseFloat(lat) || null,
+    lon: parseFloat(lon) || null
+  };
+  stories.push(story);
+  res.json({ error: false, message: 'success' });
+});
+
+// Get all stories
+app.get('/v1/stories', authenticateToken, (req, res) => {
+  const { location } = req.query;
+  let listStory = stories;
+  if (location == '1') {
+    listStory = stories.filter(s => s.lat !== null && s.lon !== null);
   }
-
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = {
-      id: users.length + 1,
-      name,
-      email,
-      password: hashedPassword,
-    };
-    users.push(newUser);
-
-    return res.status(201).json({
-      success: true,
-      message: 'Registrasi berhasil',
-      user: { id: newUser.id, name: newUser.name, email: newUser.email },
-    });
-  } catch (error) {
-    console.error('Register error:', error);
-    return res.status(500).json({ success: false, message: 'Terjadi kesalahan server' });
-  }
+  res.json({ error: false, message: 'Stories fetched successfully', listStory });
 });
 
-// Route lain (data.json)
-app.get('/api/data', (req, res) => {
-  const data = JSON.parse(fs.readFileSync('data.json'));
-  res.json(data);
+// Get story detail
+app.get('/v1/stories/:id', authenticateToken, (req, res) => {
+  const story = stories.find(s => s.id === req.params.id);
+  if (!story) return res.status(404).json({ error: true, message: 'Story not found' });
+  res.json({ error: false, message: 'Story fetched successfully', story });
 });
 
-app.post('/api/data', (req, res) => {
-  const newData = req.body;
-  const data = JSON.parse(fs.readFileSync('data.json'));
-  data.push(newData);
-  fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
-  res.json({ message: 'Data berhasil ditambahkan!', data: newData });
-});
-
-app.delete('/api/data/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  let data = JSON.parse(fs.readFileSync('data.json'));
-  const index = data.findIndex(item => item.id === id);
-
-  if (index !== -1) {
-    const deleted = data.splice(index, 1)[0];
-    fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
-    res.json({ message: 'Data berhasil dihapus!', deleted });
-  } else {
-    res.status(404).json({ message: 'Data tidak ditemukan!' });
-  }
-});
-
-// Jalankan server
-app.listen(PORT, () => {
-  console.log(`API berjalan di http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`SegarIkan API running on port ${PORT}`));
