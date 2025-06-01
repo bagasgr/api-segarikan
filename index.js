@@ -9,11 +9,23 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = 'segarikan-secret-key';
 
-app.use(cors());
+// Konfigurasi CORS dengan opsi lengkap
+const corsOptions = {
+  origin: '*', // Untuk development, izinkan semua origin. Ganti dengan daftar origin produksi jika perlu.
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200, // Untuk legacy browser agar preflight sukses
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight OPTIONS request untuk semua route
+app.options('*', cors(corsOptions));
+
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
-// Setup multer for file upload
+// Setup multer untuk upload file
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, 'uploads/');
@@ -27,7 +39,7 @@ const upload = multer({ storage });
 let users = [];
 let stories = [];
 
-// Middleware for authentication
+// Middleware autentikasi token JWT
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -41,7 +53,7 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Register
+// Register user
 app.post('/v1/register', (req, res) => {
   const { name, email, password } = req.body;
   if (users.find(u => u.email === email)) {
@@ -52,7 +64,7 @@ app.post('/v1/register', (req, res) => {
   res.json({ error: false, message: 'User Created' });
 });
 
-// Login
+// Login user
 app.post('/v1/login', (req, res) => {
   const { email, password } = req.body;
   const user = users.find(u => u.email === email && u.password === password);
@@ -62,7 +74,7 @@ app.post('/v1/login', (req, res) => {
   res.json({ error: false, message: 'success', loginResult: { userId: user.id, name: user.name, token } });
 });
 
-// Add new story (with auth)
+// Tambah cerita baru (harus autentikasi + upload foto)
 app.post('/v1/stories', authenticateToken, upload.single('photo'), (req, res) => {
   const { description, lat, lon } = req.body;
   const photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
@@ -80,7 +92,7 @@ app.post('/v1/stories', authenticateToken, upload.single('photo'), (req, res) =>
   res.json({ error: false, message: 'success' });
 });
 
-// Add new story (guest)
+// Tambah cerita guest (tanpa autentikasi, upload foto)
 app.post('/v1/stories/guest', upload.single('photo'), (req, res) => {
   const { description, lat, lon } = req.body;
   const photoUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
@@ -98,7 +110,7 @@ app.post('/v1/stories/guest', upload.single('photo'), (req, res) => {
   res.json({ error: false, message: 'success' });
 });
 
-// Get all stories
+// Ambil semua cerita (harus autentikasi)
 app.get('/v1/stories', authenticateToken, (req, res) => {
   const { location } = req.query;
   let listStory = stories;
@@ -108,7 +120,7 @@ app.get('/v1/stories', authenticateToken, (req, res) => {
   res.json({ error: false, message: 'Stories fetched successfully', listStory });
 });
 
-// Get story detail
+// Ambil detail cerita berdasarkan id (harus autentikasi)
 app.get('/v1/stories/:id', authenticateToken, (req, res) => {
   const story = stories.find(s => s.id === req.params.id);
   if (!story) return res.status(404).json({ error: true, message: 'Story not found' });
