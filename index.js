@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const multer = require('multer');
 const jwt = require('jsonwebtoken');
@@ -7,15 +6,38 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 9000;
+const PORT = process.env.PORT || 9001;
 const SECRET_KEY = 'segarikan-secret-key';
 
-// CORS
-app.use(cors());
+// Setup CORS dengan konfigurasi spesifik
+const allowedOrigins = ['http://localhost:9000']; // sesuaikan jika ada origin lain
+
+app.use(cors({
+  origin: function(origin, callback) {
+    // izinkan request tanpa origin (misalnya Postman) atau origin yang ada di list
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true, // jika kamu kirim credential (cookie, header auth, dsb)
+}));
+
+// Tangani preflight OPTIONS request
+app.options('*', cors({
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Multer untuk upload
+// Multer setup tetap sama
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, 'uploads');
