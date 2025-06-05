@@ -9,13 +9,11 @@ const app = express();
 const PORT = process.env.PORT || 9001;
 const SECRET_KEY = 'segarikan-secret-key';
 
-// Setup CORS dengan konfigurasi spesifik
-const allowedOrigins = ['http://localhost:9000']; // sesuaikan jika ada origin lain
-
+// Setup CORS
+const allowedOrigins = ['http://localhost:9000'];
 app.use(cors({
-  origin: function(origin, callback) {
-    // izinkan request tanpa origin (misalnya Postman) atau origin yang ada di list
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -23,10 +21,9 @@ app.use(cors({
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true, // jika kamu kirim credential (cookie, header auth, dsb)
+  credentials: true,
 }));
 
-// Tangani preflight OPTIONS request
 app.options('*', cors({
   origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -37,7 +34,7 @@ app.options('*', cors({
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Multer setup tetap sama
+// Setup multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, 'uploads');
@@ -46,14 +43,15 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
-  }
+  },
 });
 const upload = multer({ storage });
 
+// Simulasi database sementara
 let users = [];
 let stories = [];
 
-// Middleware token
+// Middleware JWT
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -66,7 +64,9 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Register
+// ======= ROUTES =======
+
+// REGISTER
 app.post('/v1/register', (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
@@ -80,7 +80,7 @@ app.post('/v1/register', (req, res) => {
   res.json({ error: false, message: 'User created successfully' });
 });
 
-// Login
+// LOGIN
 app.post('/v1/login', (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -97,7 +97,7 @@ app.post('/v1/login', (req, res) => {
   });
 });
 
-// Tambah cerita dengan autentikasi
+// TAMBAH CERITA (AUTH)
 app.post('/v1/stories', authenticateToken, upload.single('photo'), (req, res) => {
   const { description, lat, lon } = req.body;
   if (!req.file) {
@@ -118,7 +118,7 @@ app.post('/v1/stories', authenticateToken, upload.single('photo'), (req, res) =>
   res.json({ error: false, message: 'Story added successfully', story });
 });
 
-// Tambah cerita tanpa autentikasi (guest)
+// TAMBAH CERITA (GUEST)
 app.post('/v1/stories/guest', upload.single('photo'), (req, res) => {
   const { description, lat, lon } = req.body;
   if (!req.file) {
@@ -139,7 +139,7 @@ app.post('/v1/stories/guest', upload.single('photo'), (req, res) => {
   res.json({ error: false, message: 'Story added successfully', story });
 });
 
-// Ambil semua cerita
+// AMBIL SEMUA CERITA
 app.get('/v1/stories', authenticateToken, (req, res) => {
   const { location } = req.query;
   let listStory = stories;
@@ -149,14 +149,24 @@ app.get('/v1/stories', authenticateToken, (req, res) => {
   res.json({ error: false, message: 'Stories fetched successfully', listStory });
 });
 
-// Ambil detail cerita
+// AMBIL DETAIL CERITA
 app.get('/v1/stories/:id', authenticateToken, (req, res) => {
   const story = stories.find(s => s.id === req.params.id);
   if (!story) return res.status(404).json({ error: true, message: 'Story not found' });
   res.json({ error: false, message: 'Story fetched successfully', story });
 });
 
-// Jalankan server
+// AMBIL RIWAYAT CERITA USER
+app.get('/v1/history', authenticateToken, (req, res) => {
+  const userStories = stories.filter(s => s.name === req.user.name);
+  res.json({
+    error: false,
+    message: 'User story history fetched successfully',
+    history: userStories
+  });
+});
+
+// RUN SERVER
 app.listen(PORT, () => {
   console.log(`SegarIkan API running on port ${PORT}`);
 });
